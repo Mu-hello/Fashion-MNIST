@@ -34,7 +34,7 @@ cudnn.enabled = True
 def get_arguments():
 
 	parser = argparse.ArgumentParser(description="RecoverNet")
-
+	# bilinear：双线性插值 maxpool：最大池化 nn：神经网络 indexnet-m2o：多通道到单通道的索引映射网络
 	parser.add_argument("--upmode", type=str, default='nn', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
 	parser.add_argument("--description", type=str, default='./0130/', help="description.")
 	parser.add_argument("--evaluate", type=str, default='experiments/0130/nn/model_best.pth.tar', help="path of model.")
@@ -57,6 +57,7 @@ class RecoverNet(nn.Module):
 	def __init__(self, mode='maxpool'):
 		super(RecoverNet, self).__init__()
 		self.mode = mode
+		# 以下code实际不会执行
 		if 'index' in self.mode:
 			if 'm2o' in self.mode:
 				self.index_block = DepthwiseM2OIndexBlock
@@ -66,28 +67,33 @@ class RecoverNet(nn.Module):
 				self.index_block = HolisticIndexBlock
 		# 定义了三个卷积层（layer1、layer2和layer3），每个卷积层后跟着批归一化层和ReLU激活函数。
 		self.layer1 = nn.Sequential(
+			# 输入通道数是1，输出通道数是32，卷积核的大小是3，stride=1，padding的大小是1
 			nn.Conv2d(1, 32, kernel_size=3, stride=2 if ('bilinear' in self.mode or 'carafe' in self.mode or 'deconv' in self.mode) else 1, padding=1),
 			nn.BatchNorm2d(32),
 			nn.ReLU()
 		)
 
 		self.layer2 = nn.Sequential(
+			# 输入通道数是32，输出通道数是64，卷积核的大小是3，stride=1，padding的大小是1
 			nn.Conv2d(32*4 if 'spacedepth' in self.mode else 32, 64, kernel_size=3, stride=2 if ('bilinear' in self.mode or 'carafe' in self.mode or 'deconv' in self.mode) else 1, padding=1),
 			nn.BatchNorm2d(64),
 			nn.ReLU()
 		)
 
 		self.layer3 = nn.Sequential(
+			# 输入通道数是64，输出通道数是128，卷积核的大小是3，stride=1，padding的大小是1
 			nn.Conv2d(64*4 if 'spacedepth' in self.mode else 64, 128, kernel_size=3, stride=2 if ('bilinear' in self.mode or 'carafe' in self.mode or 'deconv' in self.mode) else 1, padding=1),
 			nn.BatchNorm2d(128),
 			nn.ReLU()
 		)
 
-		if 'maxpool' in self.mode:	# 使用最大池化下采样
+		if 'maxpool' in self.mode:	# 使用最大池化下采样,例程中没用
+			# 它进行了最大池化操作，将输入的特征图按照2x2的大小进行划分，每个划分中取最大的值作为输出，stride为2，padding为0，
+			# return_indices为True表示返回最大值的索引，
 			self.downsample1 = nn.MaxPool2d((2, 2), stride=2, padding=0, return_indices=True)
 			self.downsample2 = nn.MaxPool2d((2, 2), stride=2, padding=0, return_indices=True)
 			self.downsample3 = nn.MaxPool2d((2, 2), stride=2, padding=0, return_indices=True)
-		elif 'index' in self.mode:	#使用索引下采样
+		elif 'index' in self.mode:	# 使用索引下采样,例程中没用
 			if not 'model-wise' in self.mode:
 				self.downsample1 = self.index_block(32, use_nonlinear=True, use_context=True,
 											  use_squeeze=False, batch_norm=nn.BatchNorm2d)
@@ -101,49 +107,53 @@ class RecoverNet(nn.Module):
 				self.downsample1 = self.downsample
 				self.downsample2 = self.downsample
 				self.downsample3 = self.downsample
-		elif 'nn' in self.mode:		#使用平均池化下采样
+		elif 'nn' in self.mode:		#使用平均池化下采样，使用，对于每个池化窗口计算窗口内像素值的平均值，并输出一个新的特征图
 			self.downsample1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
 			self.downsample2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
 			self.downsample3 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
 
 		# 中间层（midlayer1和midlayer2），它们是两个卷积层和批归一化层的组合。
 		self.midlayer1 = nn.Sequential(
+			# 输入通道数是128，输出通道数是256，卷积核的大小是3，stride=1，padding的大小是1
 			nn.Conv2d(128*4 if 'spacedepth' in self.mode else 128, 256, kernel_size=3, stride=1, padding=1),
 			nn.BatchNorm2d(256),
 			nn.ReLU()
 		)
 
 		self.midlayer2 = nn.Sequential(
+			# 输入通道数是256，输出通道数是128，卷积核的大小是3，stride=1，padding的大小是1
 			nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1),
 			nn.BatchNorm2d(128),
 			nn.ReLU()
 		)
 
-		# 上采样部分，包含三个卷积层（uplayer1、uplayer2和uplayer3）
+		# 上采样部分，包含三个卷积层（uplayer1、uplayer2和uplayer3），//是整除并向下取整
 		self.uplayer1 = nn.Sequential(
+			# 输入通道数是128，输出通道数是64，卷积核的大小是3，stride=1，padding的大小是1
 			nn.Conv2d(128//4 if 'spacedepth' in self.mode else 128, 64, kernel_size=3, stride=1, padding=1),
 			nn.BatchNorm2d(64),
 			nn.ReLU()
 		)
 
 		self.uplayer2 = nn.Sequential(
+			# 输入通道数是64，输出通道数是32，卷积核的大小是3，stride=1，padding的大小是1
 			nn.Conv2d(64//4 if 'spacedepth' in self.mode else 64, 32, kernel_size=3, stride=1, padding=1),
 			nn.BatchNorm2d(32),
 			nn.ReLU()
 		)
 
-
+		# 输入通道数是32，输出通道数是1，卷积核的大小是3，stride=1，padding的大小是1
 		self.uplayer3 = nn.Conv2d(32//4 if 'spacedepth' in self.mode else 32, 1, kernel_size=3, stride=1, padding=1)
 
-		if 'maxpool' in self.mode:		# 最大池化上采样
+		if 'maxpool' in self.mode:		# 最大池化上采样,例程中没用
 			self.upsample1 = nn.MaxUnpool2d((2, 2), stride=2)
 			self.upsample2 = nn.MaxUnpool2d((2, 2), stride=2)
 			self.upsample3 = nn.MaxUnpool2d((2, 2), stride=2)
-		elif 'carafe' in self.mode:		
+		elif 'carafe' in self.mode:		# 例程中没用
 			self.upsample1 = CARAFEPack(128, 2)
 			self.upsample2 = CARAFEPack(64, 2)
 			self.upsample3 = CARAFEPack(32, 2)
-		elif 'deconv' in self.mode:		# 使用反卷积上采样
+		elif 'deconv' in self.mode:		# 使用反卷积上采样,例程中没用
 			self.upsample1 = nn.Sequential(
 				nn.ConvTranspose2d(128, 128, kernel_size=3, stride=2, padding=1, output_padding=1),
 				nn.BatchNorm2d(128),
@@ -165,18 +175,18 @@ class RecoverNet(nn.Module):
 	# 定义数据在模型中的前向传播过程
 	def forward(self, input):
 		x1 = self.layer1(input)
-		if 'maxpool' in self.mode:
+		if 'maxpool' in self.mode:	# 例程中没用
 			x1, idx1 = self.downsample1(x1)
-		elif 'index' in self.mode:
+		elif 'index' in self.mode:	# 例程中没用
 			idx1_en, idx1_de = self.downsample1(x1)
 			x1 = idx1_en * x1
 			x1 = 4 * F.avg_pool2d(x1, (2, 2), stride=2)
-		elif 'spacedepth' in self.mode:
+		elif 'spacedepth' in self.mode:	# 例程中没用
 			x1 = space_to_depth(x1, 2)
-		elif 'nn' in self.mode:
-			x1 = self.downsample1(x1)
+		elif 'nn' in self.mode:		# 用了
+			x1 = self.downsample1(x1)	# 对layer1输入张量x1进行平均池化下采样操作。
 
-		x2 = self.layer2(x1)
+		x2 = self.layer2(x1)	# 输入通道数是32，输出通道数是64，卷积核的大小是3，stride=1，padding的大小是1
 		if 'maxpool' in self.mode:
 			x2, idx2 = self.downsample2(x2)
 		elif 'index' in self.mode:
@@ -185,8 +195,8 @@ class RecoverNet(nn.Module):
 			x2 = 4 * F.avg_pool2d(x2, (2, 2), stride=2)
 		elif 'spacedepth' in self.mode:
 			x2 = space_to_depth(x2, 2)
-		elif 'nn' in self.mode:
-			x2 = self.downsample2(x2)
+		elif 'nn' in self.mode:		# 用了
+			x2 = self.downsample2(x2)	# 对layer2输入张量x2进行平均池化下采样操作。
 
 		x3 = self.layer3(x2)
 		if 'maxpool' in self.mode:
@@ -197,11 +207,11 @@ class RecoverNet(nn.Module):
 			x3 = 4 * F.avg_pool2d(x3, (2, 2), stride=2)
 		elif 'spacedepth' in self.mode:
 			x3 = space_to_depth(x3, 2)
-		elif 'nn' in self.mode:
-			x3 = self.downsample3(x3)
+		elif 'nn' in self.mode:	# 用了
+			x3 = self.downsample3(x3)	# 对laye32张量x3进行平均池化下采样操作。
 
 		l = self.midlayer1(x3)
-		l = self.midlayer2(l)
+		l = self.midlayer2(l)		# 过两道midlayer
 
 		if 'maxpool' in self.mode:
 			l = self.upsample1(l, idx3)
@@ -213,7 +223,10 @@ class RecoverNet(nn.Module):
 			l = self.upsample1(l)
 		elif 'spacedepth' in self.mode:
 			l = F.pixel_shuffle(l, 2)
-		elif 'nn' in self.mode:
+		elif 'nn' in self.mode:	# 用了
+			# 将输入张量l上采样到指定的尺寸，尺寸大小是输入张量input的1/4。
+			# 上采样后的高度和宽度（特征图的大小是输入图像大小的1/4。）
+			# 'nearest'，表示使用最近邻插值的方式进行上采样。
 			l = F.interpolate(l, size=(int(input.size()[2]/4), int(input.size()[3]/4)), mode='nearest')
 
 		l = self.uplayer1(l)
@@ -227,7 +240,8 @@ class RecoverNet(nn.Module):
 			l = self.upsample2(l)
 		elif 'spacedepth' in self.mode:
 			l = F.pixel_shuffle(l, 2)
-		elif 'nn' in self.mode:
+		elif 'nn' in self.mode:	# 用了
+			# 将输入张量l上采样到指定的尺寸，尺寸大小是输入张量input的1/2。
 			l = F.interpolate(l, size=(int(input.size()[2]/2), int(input.size()[3]/2)), mode='nearest')
 
 		l = self.uplayer2(l)
@@ -242,6 +256,7 @@ class RecoverNet(nn.Module):
 		elif 'spacedepth' in self.mode:
 			l = F.pixel_shuffle(l, 2)
 		elif 'nn' in self.mode:
+			# 将输入张量l上采样到指定的尺寸，尺寸大小是输入张量input的1/1。
 			l = F.interpolate(l, size=input.size()[2:], mode='nearest')
 
 		out = self.uplayer3(l)
@@ -258,8 +273,9 @@ class RecoverNet(nn.Module):
 
 		for m in self.modules():
 			classname = m.__class__.__name__
+			# 如果当前模块m有weight属性，并且是卷积层或全连接层，则对其进行权重初始化。
 			if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
-				if init_type == 'normal':
+				if init_type == 'normal':	# 默认，正态分布初始化
 					torch.nn.init.normal_(m.weight.data, 0.0, init_gain)
 				elif init_type == 'xavier':
 					torch.nn.init.xavier_normal_(m.weight.data, gain=init_gain)
@@ -269,6 +285,7 @@ class RecoverNet(nn.Module):
 					torch.nn.init.orthogonal_(m.weight.data, gain=init_gain)
 				else:
 					raise NotImplementedError('initialization method [%s] is not implemented' % init_type)
+				# 如果当前模块m有偏置项并且该偏置项不为None，则对其进行偏置初始化，使用常数0进行初始化。
 				if hasattr(m, 'bias') and m.bias is not None:
 					torch.nn.init.constant_(m.bias.data, 0.0)
 			elif classname.find(
@@ -378,7 +395,14 @@ def main():
 												transform=transform)
 	# batch_size参数指定每个批次的样本数量，shuffle=False表示不对数据进行洗牌，num_workers参数指定数据加载的线程数。
 	testloader = torch.utils.data.DataLoader(testset, batch_size=test_batchsize, shuffle=False, num_workers=2)
-
+	
+	#-------------------------------
+	# def get_arguments():
+	# parser = argparse.ArgumentParser(description="RecoverNet")
+	# parser.add_argument("--upmode", type=str, default='nn', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
+	# parser.add_argument("--description", type=str, default='./0130/', help="description.")
+	# parser.add_argument("--evaluate", type=str, default='experiments/0130/nn/model_best.pth.tar', help="path of model.")
+	#-------------------------------
 	# save info of model
 	trained_model_dir = 'experiments/' + args.description + '{}/'.format(args.upmode)
 	train_info_record = trained_model_dir + args.upmode + '.txt'
@@ -422,6 +446,7 @@ def main():
 	# train begin
 	print('training begin')
 	# 调度器来设置学习率的调整策略
+	# 设置了milestones=[50, 70, 85]，表示在第50、70、85个epoch时将学习率调整为原来的0.1倍。这样做的目的是为了让模型在训练后期更加稳定，避免过拟合。
 	scheduler = MultiStepLR(optimizer, milestones=[50, 70, 85], gamma=0.1)
 	for epoch in range(epoches):
 		scheduler.step()	# 更新学习率
