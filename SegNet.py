@@ -28,16 +28,16 @@ cudnn.enabled = True
 
 # 添加了三个命令行参数的定义：
 # 1--upmode 用于指定实现上采样的模式。默认值是'nn'，表示使用最近邻插值法进行上采样
-# 2--description 用于指定描述信息的路径 表示描述信息的路径为当前目录下的'0130'文件夹。
-# 3--evaluate 用于指定模型的路径 表示模型路径为'experiments/0130/nn/model_best.pth.tar'
+# 2--description 用于指定描述信息的路径 表示描述信息的路径为当前目录下的'0605_1'文件夹。
+# 3--evaluate 用于指定模型的路径 表示模型路径为'experiments/0605_1/nn/model_best.pth.tar'
 # 解析命令行参数，并返回一个包含解析结果的命名空间对象。
 def get_arguments():
 
-	parser = argparse.ArgumentParser(description="RecoverNet")
+	parser = argparse.ArgumentParser(description="SegNet")
 	# bilinear：双线性插值 maxpool：最大池化 nn：神经网络 indexnet-m2o：多通道到单通道的索引映射网络
 	parser.add_argument("--upmode", type=str, default='nn', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
-	parser.add_argument("--description", type=str, default='./0130/', help="description.")
-	parser.add_argument("--evaluate", type=str, default='experiments/0130/nn/model_best.pth.tar', help="path of model.")
+	parser.add_argument("--description", type=str, default='./0605_1/', help="description.")
+	parser.add_argument("--evaluate", type=str, default='experiments/0605_1/nn/model_best.pth.tar', help="path of model.")
 
 	return parser.parse_args()
 
@@ -53,18 +53,11 @@ def space_to_depth(x, block_size):
 	return unfolded_x.view(n, c*block_size**2, h//block_size, w//block_size)
 
 
-class RecoverNet(nn.Module):
+class SegNet(nn.Module):
 	def __init__(self, mode='maxpool'):
-		super(RecoverNet, self).__init__()
+		super(SegNet, self).__init__()
 		self.mode = mode
-		# 以下code实际不会执行
-		if 'index' in self.mode:
-			if 'm2o' in self.mode:
-				self.index_block = DepthwiseM2OIndexBlock
-			elif 'model-wise' in self.mode:
-				self.index_block = DepthwiseO2OIndexBlock
-			else:
-				self.index_block = HolisticIndexBlock
+		
 		# 定义了三个卷积层（layer1、layer2和layer3），每个卷积层后跟着批归一化层和ReLU激活函数。
 		self.layer1 = nn.Sequential(
 			# 输入通道数是1，输出通道数是32，卷积核的大小是3，stride=1，padding的大小是1
@@ -149,10 +142,7 @@ class RecoverNet(nn.Module):
 			self.upsample1 = nn.MaxUnpool2d((2, 2), stride=2)
 			self.upsample2 = nn.MaxUnpool2d((2, 2), stride=2)
 			self.upsample3 = nn.MaxUnpool2d((2, 2), stride=2)
-		elif 'carafe' in self.mode:		# 例程中没用
-			self.upsample1 = CARAFEPack(128, 2)
-			self.upsample2 = CARAFEPack(64, 2)
-			self.upsample3 = CARAFEPack(32, 2)
+		
 		elif 'deconv' in self.mode:		# 使用反卷积上采样,例程中没用
 			self.upsample1 = nn.Sequential(
 				nn.ConvTranspose2d(128, 128, kernel_size=3, stride=2, padding=1, output_padding=1),
@@ -398,10 +388,10 @@ def main():
 	
 	#-------------------------------
 	# def get_arguments():
-	# parser = argparse.ArgumentParser(description="RecoverNet")
+	# parser = argparse.ArgumentParser(description="SegNet")
 	# parser.add_argument("--upmode", type=str, default='nn', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
-	# parser.add_argument("--description", type=str, default='./0130/', help="description.")
-	# parser.add_argument("--evaluate", type=str, default='experiments/0130/nn/model_best.pth.tar', help="path of model.")
+	# parser.add_argument("--description", type=str, default='./0605_1/', help="description.")
+	# parser.add_argument("--evaluate", type=str, default='experiments/0605_1/nn/model_best.pth.tar', help="path of model.")
 	#-------------------------------
 	# save info of model
 	trained_model_dir = 'experiments/' + args.description + '{}/'.format(args.upmode)
@@ -414,7 +404,7 @@ def main():
 	if not os.path.exists(save_image_dir):
 		os.makedirs(save_image_dir)
 	# 升采样模式
-	net = RecoverNet(mode=args.upmode)
+	net = SegNet(mode=args.upmode)
 	net.cuda()
 	# 使用了SGD优化器,指定学习率lr=0.01和动量momentum=0.9。
 	optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
