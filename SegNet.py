@@ -26,6 +26,7 @@ from skimage.metrics import mean_squared_error as compare_mse
 # 启用CuDNN（CUDA Deep Neural Network library）加速。
 cudnn.enabled = True
 
+input_channels = 1
 bn_momentum = 0.1  # BN层的momentum
 torch.cuda.manual_seed(1)  # 设置随机种子
 
@@ -38,7 +39,7 @@ def get_arguments():
 
     parser = argparse.ArgumentParser(description="SegNet")
     # bilinear：双线性插值 maxpool：最大池化 nn：神经网络 indexnet-m2o：多通道到单通道的索引映射网络
-    parser.add_argument("--upmode", type=str, default='nn', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
+    parser.add_argument("--upmode", type=str, default='maxpool', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
     parser.add_argument("--description", type=str, default='./0605_1/', help="description.")
     parser.add_argument("--evaluate", type=str, default='experiments/0605_1/nn/model_best.pth.tar', help="path of model.")
 
@@ -57,7 +58,7 @@ def space_to_depth(x, block_size):
 
 
 class SegNet(nn.Module):
-    def __init__(self, mode='maxpool',input_channels):
+    def __init__(self, mode='maxpool'):
         super(SegNet, self).__init__()
         self.mode = mode
         
@@ -172,7 +173,7 @@ class SegNet(nn.Module):
             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(64, momentum=bn_momentum),
             nn.ReLU(),
-            nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(64, 1, kernel_size=3, stride=1, padding=1),
         )
 
         if 'maxpool' in self.mode:		# 最大池化上采样,例程中没用
@@ -206,20 +207,20 @@ class SegNet(nn.Module):
         elif 'nn' in self.mode:	# 用了
             x3 = self.downsample3(x3)	# 对laye32张量x3进行平均池化下采样操作。
 
-        x4 = self.enco3(x3)
+        x4 = self.enco4(x3)
         if 'maxpool' in self.mode:
             x4, idx4 = self.downsample4(x4)
         elif 'nn' in self.mode:	# 用了
             x4 = self.downsample4(x4)	# 对laye32张量x3进行平均池化下采样操作。
 
-        x5 = self.enco3(x4)
+        x5 = self.enco5(x4)
         if 'maxpool' in self.mode:
             x5, idx5 = self.downsample4(x5)
         elif 'nn' in self.mode:	# 用了
             x5 = self.downsample4(x5)	# 对laye32张量x3进行平均池化下采样操作。
         
         if 'maxpool' in self.mode:
-            l = self.upsample1(l, idx5)
+            l = self.upsample1(x5, idx5)
         elif 'nn' in self.mode:	# 用了
             # 将输入张量l上采样到指定的尺寸，尺寸大小是输入张量input的1/4。
             # 上采样后的高度和宽度（特征图的大小是输入图像大小的1/4。）
@@ -393,7 +394,7 @@ def main():
     #-------------------------------
     # def get_arguments():
     # parser = argparse.ArgumentParser(description="SegNet")
-    # parser.add_argument("--upmode", type=str, default='nn', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
+    # parser.add_argument("--upmode", type=str, default='maxpool', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
     # parser.add_argument("--description", type=str, default='./0605_1/', help="description.")
     # parser.add_argument("--evaluate", type=str, default='experiments/0605_1/nn/model_best.pth.tar', help="path of model.")
     #-------------------------------
@@ -443,9 +444,10 @@ def main():
     # 设置了milestones=[50, 70, 85]，表示在第50、70、85个epoch时将学习率调整为原来的0.1倍。这样做的目的是为了让模型在训练后期更加稳定，避免过拟合。
     scheduler = MultiStepLR(optimizer, milestones=[50, 70, 85], gamma=0.1)
     for epoch in range(epoches):
-        scheduler.step()	# 更新学习率
+        
         start = time.time()
         train(net, trainloader, optimizer, criterion)
+        scheduler.step()	# 调整学习率的顺序在optimizer.step()之后
         end = time.time()
         print('epoch: %d sample: %d cost %.5f seconds  loss: %.5f' % (
         epoch, len(trainloader.dataset), (end - start), net.train_loss['epoch_loss'][-1]))
