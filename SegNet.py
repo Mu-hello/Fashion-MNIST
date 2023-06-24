@@ -32,16 +32,16 @@ torch.cuda.manual_seed(1)  # 设置随机种子
 
 # 添加了三个命令行参数的定义：
 # 1--upmode 用于指定实现上采样的模式。默认值是'nn'，表示使用最近邻插值法进行上采样
-# 2--description 用于指定描述信息的路径 表示描述信息的路径为当前目录下的'0605_1'文件夹。
-# 3--evaluate 用于指定模型的路径 表示模型路径为'experiments/0605_1/nn/model_best.pth.tar'
+# 2--description 用于指定描述信息的路径 表示描述信息的路径为当前目录下的'0624_1'文件夹。
+# 3--evaluate 用于指定模型的路径 表示模型路径为'experiments/0624_1/nn/model_best.pth.tar'
 # 解析命令行参数，并返回一个包含解析结果的命名空间对象。
 def get_arguments():
 
     parser = argparse.ArgumentParser(description="SegNet")
     # bilinear：双线性插值 maxpool：最大池化 nn：神经网络 indexnet-m2o：多通道到单通道的索引映射网络
     parser.add_argument("--upmode", type=str, default='maxpool', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
-    parser.add_argument("--description", type=str, default='./0605_1/', help="description.")
-    parser.add_argument("--evaluate", type=str, default='experiments/0605_1/nn/model_best.pth.tar', help="path of model.")
+    parser.add_argument("--description", type=str, default='./0624_1/', help="description.")
+    parser.add_argument("--evaluate", type=str, default='experiments/0624_1/nn/model_best.pth.tar', help="path of model.")
 
     return parser.parse_args()
 
@@ -113,20 +113,20 @@ class SegNet(nn.Module):
             nn.ReLU()
         )
 
-        if 'maxpool' in self.mode:	# 使用最大池化下采样,例程中没用
+        if 'maxpool' in self.mode:	# 使用最大池化下采样
             # 它进行了最大池化操作，将输入的特征图按照2x2的大小进行划分，每个划分中取最大的值作为输出，stride为2，padding为0，
             # return_indices为True表示返回最大值的索引，
             self.downsample1 = nn.MaxPool2d((2, 2), stride=2, padding=0, return_indices=True)
             self.downsample2 = nn.MaxPool2d((2, 2), stride=2, padding=0, return_indices=True)
             self.downsample3 = nn.MaxPool2d((2, 2), stride=2, padding=0, return_indices=True)
             self.downsample4 = nn.MaxPool2d((2, 2), stride=2, padding=0, return_indices=True)
-            self.downsample5 = nn.MaxPool2d((2, 2), stride=2, padding=0, return_indices=True)
-        elif 'nn' in self.mode:		#使用平均池化下采样，使用，对于每个池化窗口计算窗口内像素值的平均值，并输出一个新的特征图
+            self.downsample5 = nn.MaxPool2d((1, 1), stride=1, padding=0, return_indices=True)
+        elif 'nn' in self.mode:		#使用平均池化下采样，对于每个池化窗口计算窗口内像素值的平均值，并输出一个新的特征图
             self.downsample1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
             self.downsample2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
             self.downsample3 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
             self.downsample4 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
-            self.downsample5 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
+            self.downsample5 = nn.AvgPool2d(kernel_size=1, stride=1, padding=0)
 
         self.deco1 = nn.Sequential(
             nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
@@ -176,8 +176,8 @@ class SegNet(nn.Module):
             nn.Conv2d(64, 1, kernel_size=3, stride=1, padding=1),
         )
 
-        if 'maxpool' in self.mode:		# 最大池化上采样,例程中没用
-            self.upsample1 = nn.MaxUnpool2d((2, 2), stride=2)
+        if 'maxpool' in self.mode:		# 最大池化上采样
+            self.upsample1 = nn.MaxUnpool2d((1, 1), stride=1)
             self.upsample2 = nn.MaxUnpool2d((2, 2), stride=2)
             self.upsample3 = nn.MaxUnpool2d((2, 2), stride=2)
             self.upsample4 = nn.MaxUnpool2d((2, 2), stride=2)
@@ -190,38 +190,38 @@ class SegNet(nn.Module):
     # 定义数据在模型中的前向传播过程
     def forward(self, input):
         x1 = self.enco1(input)
-        if 'maxpool' in self.mode:	# 例程中没用
+        if 'maxpool' in self.mode:	
             x1, idx1 = self.downsample1(x1)
-        elif 'nn' in self.mode:		# 用了
+        elif 'nn' in self.mode:		
             x1 = self.downsample1(x1)	# 对layer1输入张量x1进行平均池化下采样操作。
 
         x2 = self.enco2(x1)	# 输入通道数是32，输出通道数是64，卷积核的大小是3，stride=1，padding的大小是1
         if 'maxpool' in self.mode:
             x2, idx2 = self.downsample2(x2)
-        elif 'nn' in self.mode:		# 用了
+        elif 'nn' in self.mode:		
             x2 = self.downsample2(x2)	# 对layer2输入张量x2进行平均池化下采样操作。
 
         x3 = self.enco3(x2)
         if 'maxpool' in self.mode:
             x3, idx3 = self.downsample3(x3)
-        elif 'nn' in self.mode:	# 用了
-            x3 = self.downsample3(x3)	# 对laye32张量x3进行平均池化下采样操作。
+        elif 'nn' in self.mode:	
+            x3 = self.downsample3(x3)	
 
         x4 = self.enco4(x3)
         if 'maxpool' in self.mode:
             x4, idx4 = self.downsample4(x4)
-        elif 'nn' in self.mode:	# 用了
-            x4 = self.downsample4(x4)	# 对laye32张量x3进行平均池化下采样操作。
+        elif 'nn' in self.mode:	
+            x4 = self.downsample4(x4)	
 
         x5 = self.enco5(x4)
         if 'maxpool' in self.mode:
-            x5, idx5 = self.downsample4(x5)
-        elif 'nn' in self.mode:	# 用了
-            x5 = self.downsample4(x5)	# 对laye32张量x3进行平均池化下采样操作。
+            x5, idx5 = self.downsample5(x5)
+        elif 'nn' in self.mode:	
+            x5 = self.downsample5(x5)	
         
         if 'maxpool' in self.mode:
             l = self.upsample1(x5, idx5)
-        elif 'nn' in self.mode:	# 用了
+        elif 'nn' in self.mode:	
             # 将输入张量l上采样到指定的尺寸，尺寸大小是输入张量input的1/4。
             # 上采样后的高度和宽度（特征图的大小是输入图像大小的1/4。）
             # 'nearest'，表示使用最近邻插值的方式进行上采样。
@@ -395,8 +395,8 @@ def main():
     # def get_arguments():
     # parser = argparse.ArgumentParser(description="SegNet")
     # parser.add_argument("--upmode", type=str, default='maxpool', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
-    # parser.add_argument("--description", type=str, default='./0605_1/', help="description.")
-    # parser.add_argument("--evaluate", type=str, default='experiments/0605_1/nn/model_best.pth.tar', help="path of model.")
+    # parser.add_argument("--description", type=str, default='./0624_1/', help="description.")
+    # parser.add_argument("--evaluate", type=str, default='experiments/0624_1/nn/model_best.pth.tar', help="path of model.")
     #-------------------------------
     # save info of model
     trained_model_dir = 'experiments/' + args.description + '{}/'.format(args.upmode)
