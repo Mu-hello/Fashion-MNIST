@@ -1,4 +1,6 @@
-# Fashion-MNIST
+# Fashion-MNIST的recovernet基础框架
+
+# SegNet网络在SegNet分支里面
 
 于2023年6月4日初始化
 
@@ -7,7 +9,3 @@
 # 问题修正
 
 计算psnr,ssim的式子里面增加了size=32
-
-# 未解决问题
-
-两个库未知等等
