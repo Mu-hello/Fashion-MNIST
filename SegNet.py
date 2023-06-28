@@ -32,16 +32,16 @@ torch.cuda.manual_seed(1)  # 设置随机种子
 
 # 添加了三个命令行参数的定义：
 # 1--upmode 用于指定实现上采样的模式。默认值是'nn'，表示使用最近邻插值法进行上采样
-# 2--description 用于指定描述信息的路径 表示描述信息的路径为当前目录下的'0624_1'文件夹。
-# 3--evaluate 用于指定模型的路径 表示模型路径为'experiments/0624_1/nn/model_best.pth.tar'
+# 2--description 用于指定描述信息的路径 表示描述信息的路径为当前目录下的'0628_1'文件夹。
+# 3--evaluate 用于指定模型的路径 表示模型路径为'experiments/0628_1/nn/model_best.pth.tar'
 # 解析命令行参数，并返回一个包含解析结果的命名空间对象。
 def get_arguments():
 
     parser = argparse.ArgumentParser(description="SegNet")
     # bilinear：双线性插值 maxpool：最大池化 nn：神经网络 indexnet-m2o：多通道到单通道的索引映射网络
     parser.add_argument("--upmode", type=str, default='maxpool', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
-    parser.add_argument("--description", type=str, default='./0624_1/', help="description.")
-    parser.add_argument("--evaluate", type=str, default='experiments/0624_1/nn/model_best.pth.tar', help="path of model.")
+    parser.add_argument("--description", type=str, default='./0628_1/', help="description.")
+    parser.add_argument("--evaluate", type=str, default='experiments/0628_1/nn/model_best.pth.tar', help="path of model.")
 
     return parser.parse_args()
 
@@ -317,7 +317,7 @@ def val(epoch, model, val_loader, criterion, save_image_dir):
     val_loss = 0
     psnr = []
     ssim = []
-    mse = []
+    rmse = []
     mae = []
     # 创建一个保存当前epoch图像的目录
     save_image_dir_epoch = save_image_dir + 'epoch{}/'.format(epoch)
@@ -336,7 +336,7 @@ def val(epoch, model, val_loader, criterion, save_image_dir):
 
             # PSNR（峰值信噪比）
             # SSIM（结构相似度指数）
-            # MSE（均方误差）
+            # RMSE均方根误差
             # MAE（平均绝对误差）
             # psnr.append(psnr_value)用于将计算得到的psnr_value添加到psnr列表的末尾
             # squeeze()去除维度为1的维度,cpu()将张量从GPU内存中移动到CPU内存
@@ -346,7 +346,7 @@ def val(epoch, model, val_loader, criterion, save_image_dir):
             # 为data_range参数传递图像数据的动态范围。通常情况下，取值范围为图像数据类型的最大值减去最小值。
             psnr.append(compare_psnr(target.squeeze().cpu().numpy().astype(np.float32), output.squeeze().cpu().numpy().astype(np.float32)))
             ssim.append(compare_ssim(target.squeeze().cpu().numpy().astype(np.float32), output.squeeze().cpu().numpy().astype(np.float32),data_range=32))
-            mse.append(np.sqrt(compare_mse(target.squeeze().cpu().numpy().astype(np.float32), output.squeeze().cpu().numpy().astype(np.float32))))
+            rmse.append(np.sqrt(compare_mse(target.squeeze().cpu().numpy().astype(np.float32), output.squeeze().cpu().numpy().astype(np.float32))))
             mae.append(criterion(output, target).item())
 
             # 如果需要保存图像，可以取消代码片段中的注释，并将输出和目标图像保存到指定的目录中。
@@ -362,7 +362,7 @@ def val(epoch, model, val_loader, criterion, save_image_dir):
     model.val_loss['epoch_loss'].append(val_loss)
     model.measure['psnr'].append(np.mean(psnr))
     model.measure['ssim'].append(np.mean(ssim))
-    model.measure['mse'].append(np.mean(mse))
+    model.measure['rmse'].append(np.mean(rmse))
     model.measure['mae'].append(np.mean(mae))
 
 
@@ -395,8 +395,8 @@ def main():
     # def get_arguments():
     # parser = argparse.ArgumentParser(description="SegNet")
     # parser.add_argument("--upmode", type=str, default='maxpool', help="the mode chosen to implement upsample.") # 'bilinear', 'maxpool', 'nn'. 'indexnet-m2o', ...
-    # parser.add_argument("--description", type=str, default='./0624_1/', help="description.")
-    # parser.add_argument("--evaluate", type=str, default='experiments/0624_1/nn/model_best.pth.tar', help="path of model.")
+    # parser.add_argument("--description", type=str, default='./0628_1/', help="description.")
+    # parser.add_argument("--evaluate", type=str, default='experiments/0628_1/nn/model_best.pth.tar', help="path of model.")
     #-------------------------------
     # save info of model
     trained_model_dir = 'experiments/' + args.description + '{}/'.format(args.upmode)
@@ -425,7 +425,7 @@ def main():
     net.measure = {
         'psnr': [],
         'ssim': [],
-        'mse': [],
+        'rmse': [],
         'mae': []
     }
 
@@ -434,8 +434,8 @@ def main():
         net.load_state_dict(checkpoint['state_dict'])	# 将加载的模型参数加载到网络模型net中。
         epoch = checkpoint['epoch']
         val(epoch, net, testloader, criterion, save_image_dir)
-        print(' sample: %d psnr: %.2f%%  ssim: %.4f  mse: %0.6f mae: %0.6f' % (
-            len(testloader.dataset), net.measure['psnr'][-1], net.measure['ssim'][-1], net.measure['mse'][-1], net.measure['mae'][-1]))
+        print(' sample: %d psnr: %.2f%%  ssim: %.4f  rmse: %0.6f mae: %0.6f' % (
+            len(testloader.dataset), net.measure['psnr'][-1], net.measure['ssim'][-1], net.measure['rmse'][-1], net.measure['mae'][-1]))
         return
 
     # train begin
@@ -453,8 +453,8 @@ def main():
         epoch, len(trainloader.dataset), (end - start), net.train_loss['epoch_loss'][-1]))
 
         val(epoch, net, testloader, criterion, save_image_dir)
-        print(' sample: %d test_loss: %.5f psnr: %.2f%%  ssim: %.4f' % (
-        len(testloader.dataset), net.val_loss['epoch_loss'][-1], net.measure['psnr'][-1], net.measure['ssim'][-1]))
+        print(' eval sample: %d test_loss: %.5f psnr: %.2f%%  ssim: %.4f rmse: %.6f mae: %.6f'% (
+        len(testloader.dataset), net.val_loss['epoch_loss'][-1], net.measure['psnr'][-1], net.measure['ssim'][-1], net.measure['rmse'][-1], net.measure['mae'][-1]))
         # save checkpoint
         state = {
             'state_dict': net.state_dict(),
@@ -472,9 +472,9 @@ def main():
 
         with open(train_info_record, 'a') as f:
             f.write(
-                'lr:{}, epoch:{}, train_loss:{:.4f}, val_loss:{:.6f}, psnr:{:.2f}, ssim:{:.2f}'.format(
-                    optimizer.param_groups[0]['lr'], epoch, net.train_loss['epoch_loss'][-1],
-                    net.val_loss['epoch_loss'][-1], net.measure['psnr'][-1], net.measure['ssim'][-1]) + '\n'
+                'lr:{}, epoch:{}, train_loss:{:.4f}, val_loss:{:.6f}, psnr:{:.2f}, ssim:{:.2f}, rmse:{:.6f},mae: {:.6f}'.format(
+					optimizer.param_groups[0]['lr'], epoch, net.train_loss['epoch_loss'][-1],
+					net.val_loss['epoch_loss'][-1], net.measure['psnr'][-1], net.measure['ssim'][-1], net.measure['rmse'][-1], net.measure['mae'][-1]) + '\n'
             )
 
 if __name__ == "__main__":
